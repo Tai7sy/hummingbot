@@ -175,26 +175,47 @@ class GateIoAPIOrderBookDataSource(OrderBookTrackerDataSource):
             timestamp=snapshot_timestamp)
 
     async def _parse_trade_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
-        trade_data: Dict[str, Any] = raw_message["result"]
-        trade_timestamp: float = float(trade_data["create_time_ms"]) * 1e-3
-        trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(
-            symbol=trade_data["currency_pair"])
-        message_content = {
-            "trading_pair": trading_pair,
-            "trade_type": (float(TradeType.SELL.value)
-                           if trade_data["side"] == "sell"
-                           else float(TradeType.BUY.value)),
-            "trade_id": trade_data["id"],
-            "update_id": trade_timestamp,
-            "price": trade_data["price"],
-            "amount": trade_data["amount"],
-        }
-        trade_message: Optional[OrderBookMessage] = OrderBookMessage(
-            message_type=OrderBookMessageType.TRADE,
-            content=message_content,
-            timestamp=trade_timestamp)
 
-        message_queue.put_nowait(trade_message)
+        if raw_message.get("method") == "trades.update":
+            trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=raw_message["params"][0])
+            for trade_data in raw_message["params"][1]:
+                trade_timestamp: float = float(trade_data["time"])
+                message_content = {
+                    "trading_pair": trading_pair,
+                    "trade_type": (float(TradeType.SELL.value)
+                                   if trade_data["type"] == "sell"
+                                   else float(TradeType.BUY.value)),
+                    "trade_id": trade_data["id"],
+                    "update_id": trade_timestamp,
+                    "price": trade_data["price"],
+                    "amount": trade_data["amount"],
+                }
+                trade_message: Optional[OrderBookMessage] = OrderBookMessage(
+                    message_type=OrderBookMessageType.TRADE,
+                    content=message_content,
+                    timestamp=trade_timestamp)
+
+                message_queue.put_nowait(trade_message)
+        elif "result" in raw_message:
+            trade_data: Dict[str, Any] = raw_message["result"]
+            trade_timestamp: float = float(trade_data["create_time_ms"]) * 1e-3
+            trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=trade_data["currency_pair"])
+            message_content = {
+                "trading_pair": trading_pair,
+                "trade_type": (float(TradeType.SELL.value)
+                               if trade_data["side"] == "sell"
+                               else float(TradeType.BUY.value)),
+                "trade_id": trade_data["id"],
+                "update_id": trade_timestamp,
+                "price": trade_data["price"],
+                "amount": trade_data["amount"],
+            }
+            trade_message: Optional[OrderBookMessage] = OrderBookMessage(
+                message_type=OrderBookMessageType.TRADE,
+                content=message_content,
+                timestamp=trade_timestamp)
+
+            message_queue.put_nowait(trade_message)
 
     async def _parse_order_book_diff_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
 
@@ -247,6 +268,8 @@ class GateIoAPIOrderBookDataSource(OrderBookTrackerDataSource):
         # v3 api
         if event_message.get("method") == "depth.update":
             return self._diff_messages_queue_key
+        if event_message.get("method") == "trades.update":
+            return self._trade_messages_queue_key
 
         channel = ""
         if event_message.get("error") is not None:
@@ -271,6 +294,14 @@ class GateIoAPIOrderBookDataSource(OrderBookTrackerDataSource):
             ws: WSAssistant = await self._api_factory.get_ws_assistant()
             await ws.connect(ws_url="wss://webws.gateio.live/v3", ping_timeout=CONSTANTS.PING_TIMEOUT)
 
+            """{id: 1648415, method: "trades.subscribe", params: ["XMR_USDT"]}"""
+            trades_payload = {
+                "id": random.randint(1000000, 9999999),  # random id
+                "method": "trades.subscribe",
+                "params": [symbol]
+            }
+            subscribe_trade_request: WSJSONRequest = WSJSONRequest(payload=trades_payload)
+
             """{id: 3621165, method: "depth.subscribe", params: ["XMR_USDT", 30, "0.01"]}"""
             order_book_payload = {
                 "id": random.randint(1000000, 9999999), # random id
@@ -278,6 +309,8 @@ class GateIoAPIOrderBookDataSource(OrderBookTrackerDataSource):
                 "params": [symbol, 30, "0.01"] # limit = 30
             }
             subscribe_orderbook_request: WSJSONRequest = WSJSONRequest(payload=order_book_payload)
+
+            await ws.send(subscribe_trade_request)
             await ws.send(subscribe_orderbook_request)
 
             return ws
