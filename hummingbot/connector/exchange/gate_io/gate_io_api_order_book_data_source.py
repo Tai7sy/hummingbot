@@ -38,20 +38,12 @@ class GateIoAPIOrderBookDataSource(OrderBookTrackerDataSource):
         return await self._connector.get_last_traded_prices(trading_pairs=trading_pairs)
 
     async def _order_book_snapshot(self, trading_pair: str) -> OrderBookMessage:
-        snapshot_response: Dict[str, Any] = await self._request_order_book_snapshot(trading_pair)
-        snapshot_timestamp: float = self._time()
-        snapshot_msg: OrderBookMessage = OrderBookMessage(
-            OrderBookMessageType.SNAPSHOT,
-            {
-                "trading_pair": trading_pair,
-                "update_id": snapshot_response["id"],
-                "bids": snapshot_response["bids"],
-                "asks": snapshot_response["asks"],
-            },
-            timestamp=snapshot_timestamp)
-        return snapshot_msg
+        if web_utils.is_hidden_pair(trading_pair):
+            return await self._request_order_book_snapshot_web(trading_pair)
+        else:
+            return await self._request_order_book_snapshot(trading_pair)
 
-    async def _request_order_book_snapshot(self, trading_pair: str) -> Dict[str, Any]:
+    async def _request_order_book_snapshot(self, trading_pair: str) -> OrderBookMessage:
         """
         Retrieves a copy of the full order book from the exchange, for a particular trading pair.
 
@@ -65,12 +57,120 @@ class GateIoAPIOrderBookDataSource(OrderBookTrackerDataSource):
         }
 
         rest_assistant = await self._api_factory.get_rest_assistant()
-        return await rest_assistant.execute_request(
+        snapshot_response: Dict[str, Any] = await rest_assistant.execute_request(
             url=web_utils.public_rest_url(endpoint=CONSTANTS.ORDER_BOOK_PATH_URL),
             params=params,
             method=RESTMethod.GET,
             throttler_limit_id=CONSTANTS.ORDER_BOOK_PATH_URL,
         )
+
+        """
+        {
+            "id": 23559187965,
+            "current": 1746968695686,
+            "update": 1746968695634,
+            "asks": [
+                [
+                    "104624.8",
+                    "0.20416"
+                ],
+                [
+                    "104627.9",
+                    "0.005"
+                ]
+            ],
+            "bids": [
+                [
+                    "104624.7",
+                    "0.31423"
+                ],
+                [
+                    "104624.6",
+                    "0.17289"
+                ]
+            ]
+        }
+        """
+
+        snapshot_timestamp: float = self._time()
+        return OrderBookMessage(
+            OrderBookMessageType.SNAPSHOT,
+            {
+                "trading_pair": trading_pair,
+                "update_id": snapshot_response["id"],
+                "bids": snapshot_response["bids"],
+                "asks": snapshot_response["asks"],
+            },
+            timestamp=snapshot_timestamp)
+
+    async def _request_order_book_snapshot_web(self, trading_pair: str) -> OrderBookMessage:
+        """
+        Retrieves a copy of the full order book from the exchange, for a particular trading pair.
+
+        :param trading_pair: the trading pair for which the order book will be retrieved
+
+        :return: the response from the exchange (JSON dictionary)
+        """
+        params = {
+            "currency_pair": await self._connector.exchange_symbol_associated_to_pair(trading_pair=trading_pair),
+            # "limit": 50,
+            # "interval": "0.0001"
+        }
+
+        rest_assistant = await self._api_factory.get_rest_assistant()
+        snapshot_response: Dict[str, Any] = await rest_assistant.execute_request(
+            url="https://www.gate.io/apiw/v2/spot/order_book",
+            params=params,
+            method=RESTMethod.GET,
+            throttler_limit_id=CONSTANTS.ORDER_BOOK_PATH_URL,
+        )
+
+        """
+        {
+        "timestamp": 1746968591255,
+        "method": "/apiw/v2/spot/order_book",
+        "code": 200,
+        "message": "Success",
+        "page": null,
+        "limit": null,
+        "total": null,
+        "data": {
+            "current_price": "328.63",
+            "current": 1746968591249,
+            "update": 1746968590558,
+            "asks": [
+                {
+                    "p": "333.0000",
+                    "s": "5.024"
+                },
+                {
+                    "p": "333.4400",
+                    "s": "0.236"
+                }
+            ],
+             "bids": [
+                {
+                    "p": "328.6500",
+                    "s": "2.565"
+                },
+                {
+                    "p": "328.6300",
+                    "s": "12.0214"
+                }
+            ]
+            }
+        }
+        """
+        snapshot_timestamp: float = self._time()
+        return OrderBookMessage(
+            OrderBookMessageType.SNAPSHOT,
+            {
+                "trading_pair": trading_pair,
+                "update_id": snapshot_response["data"]["current"],
+                "bids": [[float(bid["p"]), float(bid["s"])] for bid in snapshot_response["data"]["bids"]],
+                "asks": [[float(ask["p"]), float(ask["s"])] for ask in snapshot_response["data"]["asks"]],
+            },
+            timestamp=snapshot_timestamp)
 
     async def _parse_trade_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
         trade_data: Dict[str, Any] = raw_message["result"]

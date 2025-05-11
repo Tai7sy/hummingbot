@@ -9,6 +9,7 @@ from hummingbot.connector.exchange.gate_io import gate_io_constants as CONSTANTS
 from hummingbot.connector.exchange.gate_io.gate_io_api_order_book_data_source import GateIoAPIOrderBookDataSource
 from hummingbot.connector.exchange.gate_io.gate_io_api_user_stream_data_source import GateIoAPIUserStreamDataSource
 from hummingbot.connector.exchange.gate_io.gate_io_auth import GateIoAuth
+from hummingbot.connector.exchange.gate_io.gate_io_web_utils import add_hidden_pairs
 from hummingbot.connector.exchange_py_base import ExchangePyBase
 from hummingbot.connector.trading_rule import TradingRule
 from hummingbot.connector.utils import combine_to_hb_trading_pair
@@ -511,7 +512,7 @@ class GateIoExchange(ExchangePyBase):
             mapping[symbol_data["id"]] = combine_to_hb_trading_pair(base=symbol_data["base"],
                                                                     quote=symbol_data["quote"])
         # fix hidden pair
-        mapping['XMR_USDT'] = 'XMR-USDT'
+        mapping.update(add_hidden_pairs())
         self._set_trading_pair_symbol_map(mapping)
 
     async def _get_last_traded_price(self, trading_pair: str) -> float:

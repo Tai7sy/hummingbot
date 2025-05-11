@@ -1,5 +1,6 @@
 from typing import Any, Callable, Dict, Optional
 
+from bidict import bidict
 import hummingbot.connector.exchange.gate_io.gate_io_constants as CONSTANTS
 from hummingbot.connector.time_synchronizer import TimeSynchronizer
 from hummingbot.connector.utils import TimeSynchronizerRESTPreProcessor
@@ -8,6 +9,13 @@ from hummingbot.core.web_assistant.auth import AuthBase
 from hummingbot.core.web_assistant.connections.data_types import RESTMethod
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
 
+def is_hidden_pair(trading_pair: str) -> bool:
+    return "XMR" in trading_pair
+
+def add_hidden_pairs() -> bidict:
+    mapping = bidict()
+    mapping['XMR_USDT'] = 'XMR-USDT'
+    return mapping
 
 def public_rest_url(endpoint: str, domain: str = CONSTANTS.DEFAULT_DOMAIN) -> str:
     """
