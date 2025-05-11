@@ -175,6 +175,33 @@ class GateIoExchange(ExchangePyBase):
             except Exception:
                 self.logger().error(
                     f"Error parsing the trading pair rule {rule}. Skipping.", exc_info=True)
+
+        # web_utils.add_hidden_pairs()
+        # https://www.gate.io/apiw/v2/common/market_config?currency_pair=XMR_USDT
+        rule: Dict[str, Any] = {
+            "amount_precision": 4,
+            "precision": 2,
+            "min_base_amount": "0.0001",
+            "min_quote_amount": "1",
+            "max_base_amount": "0",
+            "max_quote_amount": "5000000",
+        }
+        min_amount_inc = Decimal(f"1e-{rule['amount_precision']}")
+        min_price_inc = Decimal(f"1e-{rule['precision']}")
+        min_amount = Decimal(str(rule.get("min_base_amount", min_amount_inc)))
+        min_notional = Decimal(str(rule.get("min_quote_amount", min_price_inc)))
+
+        result.append(
+            TradingRule(
+                "XMR_USDT",
+                min_order_size=min_amount,
+                min_price_increment=min_price_inc,
+                min_base_amount_increment=min_amount_inc,
+                min_notional_size=min_notional,
+                min_order_value=min_notional,
+            )
+        )
+
         return result
 
     async def _place_order(self,
