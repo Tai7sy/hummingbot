@@ -554,7 +554,7 @@ class GateIoExchange(ExchangePyBase):
                 overwrite_url="https://www.gate.io/apiw/v2/spot/tickers",
                 params=params
             )
-            return float(resp_json["data"]["rate"])
+            return float(resp_json["data"][0]["rate"])
         else:
             params = {
                 "currency_pair": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
