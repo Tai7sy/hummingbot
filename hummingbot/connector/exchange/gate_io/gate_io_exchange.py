@@ -510,6 +510,8 @@ class GateIoExchange(ExchangePyBase):
         for symbol_data in filter(web_utils.is_exchange_information_valid, exchange_info):
             mapping[symbol_data["id"]] = combine_to_hb_trading_pair(base=symbol_data["base"],
                                                                     quote=symbol_data["quote"])
+        # fix hidden pair
+        mapping['XMR_USDT'] = 'XMR-USDT'
         self._set_trading_pair_symbol_map(mapping)
 
     async def _get_last_traded_price(self, trading_pair: str) -> float:
