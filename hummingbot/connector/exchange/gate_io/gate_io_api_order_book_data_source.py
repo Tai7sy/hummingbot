@@ -199,9 +199,9 @@ class GateIoAPIOrderBookDataSource(OrderBookTrackerDataSource):
     async def _parse_order_book_diff_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
 
         # v3 api
-        if raw_message.get("") == "depth.update":
+        if raw_message.get("method") == "depth.update":
             diff_data: [str, Any] = raw_message["params"][1]
-            timestamp: float = (diff_data["current"]) * 1e-3
+            timestamp: float = (diff_data["current"])
             update_id: int = diff_data["id"]
 
             trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=raw_message["params"][2])
@@ -218,7 +218,7 @@ class GateIoAPIOrderBookDataSource(OrderBookTrackerDataSource):
                 timestamp)
 
             message_queue.put_nowait(diff_message)
-        else:
+        elif "result" in raw_message:
             diff_data: [str, Any] = raw_message["result"]
             timestamp: float = (diff_data["t"]) * 1e-3
             update_id: int = diff_data["u"]
