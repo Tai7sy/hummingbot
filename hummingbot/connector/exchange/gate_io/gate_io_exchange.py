@@ -193,7 +193,7 @@ class GateIoExchange(ExchangePyBase):
 
         result.append(
             TradingRule(
-                "XMR_USDT",
+                "XMR-USDT",
                 min_order_size=min_amount,
                 min_price_increment=min_price_inc,
                 min_base_amount_increment=min_amount_inc,

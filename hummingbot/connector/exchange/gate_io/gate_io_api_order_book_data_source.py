@@ -275,7 +275,7 @@ class GateIoAPIOrderBookDataSource(OrderBookTrackerDataSource):
             order_book_payload = {
                 "id": random.randint(1000000, 9999999), # random id
                 "method": "depth.subscribe",
-                "params": [symbol, "30", "0.01"]
+                "params": [symbol, 30, "0.01"] # limit = 30
             }
             subscribe_orderbook_request: WSJSONRequest = WSJSONRequest(payload=order_book_payload)
             await ws.send(subscribe_orderbook_request)
