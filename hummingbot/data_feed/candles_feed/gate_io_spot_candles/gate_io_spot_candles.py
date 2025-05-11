@@ -31,6 +31,8 @@ class GateioSpotCandles(CandlesBase):
 
     @property
     def wss_url(self):
+        if self.is_web_api:
+            return "wss://webws.gateio.live/v3"
         return CONSTANTS.WSS_URL
 
     @property

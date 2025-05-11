@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -7,6 +8,7 @@ from hummingbot.connector.exchange.gate_io import gate_io_constants as CONSTANTS
 from hummingbot.core.data_type.common import TradeType
 from hummingbot.core.data_type.order_book_message import OrderBookMessage, OrderBookMessageType
 from hummingbot.core.data_type.order_book_tracker_data_source import OrderBookTrackerDataSource
+from hummingbot.core.utils.async_utils import safe_gather
 from hummingbot.core.web_assistant.connections.data_types import RESTMethod, WSJSONRequest
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
 from hummingbot.core.web_assistant.ws_assistant import WSAssistant
@@ -195,63 +197,57 @@ class GateIoAPIOrderBookDataSource(OrderBookTrackerDataSource):
         message_queue.put_nowait(trade_message)
 
     async def _parse_order_book_diff_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
-        diff_data: [str, Any] = raw_message["result"]
-        timestamp: float = (diff_data["t"]) * 1e-3
-        update_id: int = diff_data["u"]
 
-        trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=diff_data["s"])
+        # v3 api
+        if raw_message.get("") == "depth.update":
+            diff_data: [str, Any] = raw_message["params"][1]
+            timestamp: float = (diff_data["current"]) * 1e-3
+            update_id: int = diff_data["id"]
 
-        order_book_message_content = {
-            "trading_pair": trading_pair,
-            "update_id": update_id,
-            "first_update_id": diff_data["U"],
-            "bids": diff_data["b"],
-            "asks": diff_data["a"],
-        }
-        diff_message: OrderBookMessage = OrderBookMessage(
-            OrderBookMessageType.DIFF,
-            order_book_message_content,
-            timestamp)
+            trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=raw_message["params"][2])
+            order_book_message_content = {
+                "trading_pair": trading_pair,
+                "update_id": update_id,
+                "first_update_id": update_id,
+                "bids": diff_data["bids"],
+                "asks": diff_data["asks"],
+            }
+            diff_message: OrderBookMessage = OrderBookMessage(
+                OrderBookMessageType.DIFF,
+                order_book_message_content,
+                timestamp)
 
-        message_queue.put_nowait(diff_message)
+            message_queue.put_nowait(diff_message)
+        else:
+            diff_data: [str, Any] = raw_message["result"]
+            timestamp: float = (diff_data["t"]) * 1e-3
+            update_id: int = diff_data["u"]
+
+            trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=diff_data["s"])
+
+            order_book_message_content = {
+                "trading_pair": trading_pair,
+                "update_id": update_id,
+                "first_update_id": diff_data["U"],
+                "bids": diff_data["b"],
+                "asks": diff_data["a"],
+            }
+            diff_message: OrderBookMessage = OrderBookMessage(
+                OrderBookMessageType.DIFF,
+                order_book_message_content,
+                timestamp)
+
+            message_queue.put_nowait(diff_message)
 
     async def _subscribe_channels(self, ws: WSAssistant):
-        """
-        Subscribes to the trade events and diff orders events through the provided websocket connection.
-
-        :param ws: the websocket assistant used to connect to the exchange
-        """
-        try:
-            for trading_pair in self._trading_pairs:
-                symbol = await self._connector.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
-
-                trades_payload = {
-                    "time": int(self._time()),
-                    "channel": CONSTANTS.TRADES_ENDPOINT_NAME,
-                    "event": "subscribe",
-                    "payload": [symbol]
-                }
-                subscribe_trade_request: WSJSONRequest = WSJSONRequest(payload=trades_payload)
-
-                order_book_payload = {
-                    "time": int(self._time()),
-                    "channel": CONSTANTS.ORDERS_UPDATE_ENDPOINT_NAME,
-                    "event": "subscribe",
-                    "payload": [symbol, "100ms"]
-                }
-                subscribe_orderbook_request: WSJSONRequest = WSJSONRequest(payload=order_book_payload)
-
-                await ws.send(subscribe_trade_request)
-                await ws.send(subscribe_orderbook_request)
-
-                self.logger().info("Subscribed to public order book and trade channels...")
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            self.logger().error("Unexpected error occurred subscribing to order book data streams.")
-            raise
+        pass
 
     def _channel_originating_message(self, event_message: Dict[str, Any]) -> str:
+
+        # v3 api
+        if event_message.get("method") == "depth.update":
+            return self._diff_messages_queue_key
+
         channel = ""
         if event_message.get("error") is not None:
             err_msg = event_message.get("error", {}).get("message", event_message.get("error"))
@@ -265,6 +261,76 @@ class GateIoAPIOrderBookDataSource(OrderBookTrackerDataSource):
         return channel
 
     async def _connected_websocket_assistant(self) -> WSAssistant:
-        ws: WSAssistant = await self._api_factory.get_ws_assistant()
-        await ws.connect(ws_url=CONSTANTS.WS_URL, ping_timeout=CONSTANTS.PING_TIMEOUT)
-        return ws
+        pass
+
+    async def _connected_websocket_assistant_for_pair(self, trading_pair: str) -> WSAssistant:
+
+        symbol = await self._connector.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
+
+        if web_utils.is_hidden_pair(trading_pair):
+            ws: WSAssistant = await self._api_factory.get_ws_assistant()
+            await ws.connect(ws_url="wss://webws.gateio.live/v3", ping_timeout=CONSTANTS.PING_TIMEOUT)
+
+            """{id: 3621165, method: "depth.subscribe", params: ["XMR_USDT", 30, "0.01"]}"""
+            order_book_payload = {
+                "id": random.randint(1000000, 9999999), # random id
+                "method": "depth.subscribe",
+                "params": [symbol, "30", "0.01"]
+            }
+            subscribe_orderbook_request: WSJSONRequest = WSJSONRequest(payload=order_book_payload)
+            await ws.send(subscribe_orderbook_request)
+
+            return ws
+        else:
+            ws: WSAssistant = await self._api_factory.get_ws_assistant()
+            await ws.connect(ws_url=CONSTANTS.WS_URL, ping_timeout=CONSTANTS.PING_TIMEOUT)
+
+            trades_payload = {
+                "time": int(self._time()),
+                "channel": CONSTANTS.TRADES_ENDPOINT_NAME,
+                "event": "subscribe",
+                "payload": [symbol]
+            }
+            subscribe_trade_request: WSJSONRequest = WSJSONRequest(payload=trades_payload)
+
+            order_book_payload = {
+                "time": int(self._time()),
+                "channel": CONSTANTS.ORDERS_UPDATE_ENDPOINT_NAME,
+                "event": "subscribe",
+                "payload": [symbol, "100ms"]
+            }
+            subscribe_orderbook_request: WSJSONRequest = WSJSONRequest(payload=order_book_payload)
+
+            await ws.send(subscribe_trade_request)
+            await ws.send(subscribe_orderbook_request)
+
+            return ws
+
+    async def listen_for_subscriptions(self):
+        """
+        Connects to the trade events and order diffs websocket endpoints and listens to the messages sent by the
+        exchange. Each message is stored in its own queue.
+        """
+
+        async def handle_subscription(trading_pair):
+            ws: Optional[WSAssistant] = None
+            while True:
+                try:
+                    ws: WSAssistant = await self._connected_websocket_assistant_for_pair(trading_pair=trading_pair)
+                    await self._subscribe_channels(ws)
+                    await self._process_websocket_messages(websocket_assistant=ws)
+                except asyncio.CancelledError:
+                    raise
+                except ConnectionError as connection_exception:
+                    self.logger().warning(
+                        f"The websocket connection to {trading_pair} was closed ({connection_exception})")
+                except Exception:
+                    self.logger().exception(
+                        "Unexpected error occurred when listening to order book streams. Retrying in 5 seconds...",
+                    )
+                    await self._sleep(1.0)
+                finally:
+                    await self._on_order_stream_interruption(websocket_assistant=ws)
+
+        tasks = [handle_subscription(trading_pair) for trading_pair in self._trading_pairs]
+        await safe_gather(*tasks)
