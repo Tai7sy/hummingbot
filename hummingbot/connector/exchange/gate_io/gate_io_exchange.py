@@ -139,6 +139,18 @@ class GateIoExchange(ExchangePyBase):
             api_factory=self._web_assistants_factory,
             domain=self.domain,
         )
+    
+    async def trading_pair_associated_to_exchange_symbol(self, symbol: str) -> str:
+        """
+        exchange symbol 'BTC_USDT' to humming pair 'BTC-USDT'.
+        """
+        return symbol.replace("_", "-")
+
+    async def exchange_symbol_associated_to_pair(self, trading_pair: str) -> str:
+        """
+        humming pair 'BTC-USDT' to exchange symbol 'BTC_USDT'.
+        """
+        return trading_pair.replace("-", "_")
 
     async def _format_trading_rules(self, raw_trading_pair_info: Dict[str, Any]) -> List[TradingRule]:
         """
