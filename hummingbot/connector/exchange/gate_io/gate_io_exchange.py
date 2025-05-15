@@ -543,25 +543,28 @@ class GateIoExchange(ExchangePyBase):
         self._set_trading_pair_symbol_map(mapping)
 
     async def _get_last_traded_price(self, trading_pair: str) -> float:
-
-        if web_utils.is_hidden_pair(trading_pair):
-            params = {
-                "market": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
-            }
-            resp_json = await self._api_request(
-                method=RESTMethod.GET,
-                path_url=CONSTANTS.TICKER_PATH_URL,
-                overwrite_url="https://www.gate.io/apiw/v2/spot/tickers",
-                params=params
-            )
-            return float(resp_json["data"][0]["rate"])
-        else:
-            params = {
-                "currency_pair": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
-            }
-            resp_json = await self._api_request(
-                method=RESTMethod.GET,
-                path_url=CONSTANTS.TICKER_PATH_URL,
-                params=params
-            )
-            return float(resp_json[0]["last"])
+        try:
+            if web_utils.is_hidden_pair(trading_pair):
+                params = {
+                    "market": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
+                }
+                resp_json = await self._api_request(
+                    method=RESTMethod.GET,
+                    path_url=CONSTANTS.TICKER_PATH_URL,
+                    overwrite_url="https://www.gate.io/apiw/v2/spot/tickers",
+                    params=params
+                )
+                return float(resp_json["data"][0]["rate"])
+            else:
+                params = {
+                    "currency_pair": await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
+                }
+                resp_json = await self._api_request(
+                    method=RESTMethod.GET,
+                    path_url=CONSTANTS.TICKER_PATH_URL,
+                    params=params
+                )
+                return float(resp_json[0]["last"])
+        except Exception as e:
+            self.logger().warn(f"_get_last_traded_price for {trading_pair} failed.", exc_info=False)
+            return 0
