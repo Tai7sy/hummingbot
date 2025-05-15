@@ -152,6 +152,14 @@ class GateIoExchange(ExchangePyBase):
         """
         return trading_pair.replace("-", "_")
 
+    async def start_network(self):
+        """
+        Start all required tasks to update the status of the connector.
+        """
+        await self._update_trading_rules()
+        await self._update_balances()
+        await super().start_network()
+
     async def _format_trading_rules(self, raw_trading_pair_info: Dict[str, Any]) -> List[TradingRule]:
         """
         Converts json API response into a dictionary of trading rules.
